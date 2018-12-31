@@ -74,11 +74,13 @@ static void Help(void)
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "-v                 : verbose output\n");
 	fprintf(stderr, "\n");
-	fprintf(stderr, "--pktcnt           : total number of packets to output\n");
-	fprintf(stderr, "--flowcnt          : total number of flows\n");
-	fprintf(stderr, "--pktsize          : size of each packet\n");
-	fprintf(stderr, "--pktslice         : packet slicing amount (default 0)\n");
-	fprintf(stderr, "--bps <output rate> : output generation rate (e.g. 1e9 = 1Gbps)n");
+	fprintf(stderr, "--pktcnt   <total packts>        : total number of packets to output\n");
+	fprintf(stderr, "--flowcnt  <total flows>         : total number of flows\n");
+	fprintf(stderr, "--pktsize  <packet size>         : size of each packet\n");
+	fprintf(stderr, "--pktslice <packet slice amount> : packet slicing amount (default 0)\n");
+	fprintf(stderr, "--bps      <bits output rate>    : output generation rate (e.g. 1e9 = 1Gbps)\n");
+	fprintf(stderr, "\n");
+	fprintf(stderr, "\n");
 }
 
 //-------------------------------------------------------------------------------------------------
