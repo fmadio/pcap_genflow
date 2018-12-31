@@ -59,6 +59,12 @@ static Flow_t*	s_FlowList	= NULL;			// flow headers
 
 double TSC2Nano = 0;
 
+static u64 s_TargetPktCnt			= 1e6;			// number of packets to generate
+static u64 s_TargetFlowCnt			= 1e3;			// number of flows to generate 
+static u64 s_TargetPktSize			= 512;			// packet size to generate 
+static u64 s_TargetPktSlice			= 9200;			// how much to slice each packet 
+static u64 s_TargetBps				= 1e9;			// output data rate
+
 //-------------------------------------------------------------------------------------------------
 
 static void Help(void)
@@ -67,8 +73,12 @@ static void Help(void)
 	fprintf(stderr, "\n");
 	fprintf(stderr, "Options:\n");
 	fprintf(stderr, "-v                 : verbose output\n");
-	fprintf(stderr, "-vv                : dump every packet\n");
 	fprintf(stderr, "\n");
+	fprintf(stderr, "--pktcnt           : total number of packets to output\n");
+	fprintf(stderr, "--flowcnt          : total number of flows\n");
+	fprintf(stderr, "--pktsize          : size of each packet\n");
+	fprintf(stderr, "--pktslice         : packet slicing amount (default 0)\n");
+	fprintf(stderr, "--bps <output rate> : output generation rate (e.g. 1e9 = 1Gbps)n");
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -206,6 +216,36 @@ int main(int argc, char* argv[])
 			Help();
 			return 0;
 		}
+		if (strcmp(argv[i], "--pktcnt") == 0)
+		{
+			s_TargetPktCnt = atof(argv[i+1]);
+			fprintf(stderr, "  PktCnt: %lli\n", s_TargetPktCnt);
+			i++;	
+		}
+		if (strcmp(argv[i], "--flowcnt") == 0)
+		{
+			s_TargetFlowCnt = atof(argv[i+1]);
+			fprintf(stderr, "  FlowCnt: %lli\n", s_TargetFlowCnt);
+			i++;	
+		}
+		if (strcmp(argv[i], "--pktsize") == 0)
+		{
+			s_TargetPktSize = atof(argv[i+1]);
+			fprintf(stderr, "  PacketSize: %lli\n", s_TargetPktSize);
+			i++;	
+		}
+		if (strcmp(argv[i], "--pktslice") == 0)
+		{
+			s_TargetPktSlice = atof(argv[i+1]);
+			fprintf(stderr, "  PacketSlice: %lli\n", s_TargetPktSlice);
+			i++;	
+		}
+		if (strcmp(argv[i], "--bps") == 0)
+		{
+			s_TargetBps = atof(argv[i+1]);
+			fprintf(stderr, "  Target Rate: %.3f Gbps\n", s_TargetBps / 1e9);
+			i++;	
+		}
 	}
 
 	FILE* OutFile = stdout;
@@ -231,19 +271,18 @@ memset(Histo, 0, sizeof(Histo));
 	// start time
 	u64 TSStart 		= clock_ns();
 
-	u64 TargetPkt		= 4e6;
+	u64 TargetPkt		= s_TargetPktCnt;
 	u32 MTU				= 1500;
-	u32 TargetFlow		= 100e3;
-	u32 LengthSlice		= 192;				// slice amount
-	float TargetGbps 	= 1e9;
-	//float TargetGbps 	= 0.1e9;
+	u32 TargetFlow		= s_TargetFlowCnt;
+	u32 LengthSlice		= s_TargetPktSlice;				// slice amount
+	float TargetGbps 	= s_TargetBps;
 
 	// output payload buffer
 	u8* OutputBuffer	= malloc(16*1024);
 	memset(OutputBuffer, 0, 16*1024);
 
 	// generate flows
-	s_FlowCnt		= TargetFlow;
+	s_FlowCnt		= s_TargetFlowCnt;
 	s_FlowList		= (Flow_t*)malloc( s_FlowCnt * sizeof(Flow_t) );
 	memset(s_FlowList, 0, s_FlowCnt * sizeof(Flow_t) );
 	for (int i=0; i < s_FlowCnt; i++)
