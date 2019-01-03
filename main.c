@@ -365,7 +365,7 @@ memset(Histo, 0, sizeof(Histo));
 	while (PktCnt < TargetPkt)
 	{
 		//u32 Length = 64 + (MTU - 64) * fabs(randg(0, 1)); 
-		u32 Length = 512; 
+		u32 Length = s_TargetPktSize; 
 
 		// TSOffset is sub-nano, need to seperate into a base + offset
 		u64 TS = TSStart + TSOffset;
