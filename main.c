@@ -84,6 +84,85 @@ static void Help(void)
 }
 
 //-------------------------------------------------------------------------------------------------
+
+// Computing the internet checksum (RFC 1071).
+// Note that the internet checksum does not preclude collisions.
+static inline uint16_t IP4Checksum(u16 *addr, int len)
+{
+  s32 count = len;
+  u32 sum = 0;
+  u16 answer = 0;
+
+  // Sum up 2-byte values until none or only one byte left.
+  do
+  {
+    sum += addr[0];
+
+   	addr += 1; 
+    count -= 2;
+  } while (count > 1);
+
+  // Add left-over byte, if any.
+  u8* addr8 = (u8*)addr;
+  if (count > 0) {
+    sum += addr8[0];
+	addr8++;
+  }
+
+  // Fold 32-bit sum into 16 bits; we lose information by doing this,
+  // increasing the chances of a collision.
+  // sum = (lower 16 bits) + (upper 16 bits shifted right 16 bits)
+  while (sum >> 16) {
+    sum = (sum & 0xffff) + (sum >> 16);
+  }
+
+  // Checksum is one's compliment of sum.
+  answer = ~sum;
+
+  return (answer);
+}
+/*
+static u16 TCPSum16(IPv4Header_t* IPHeader, void* _D, u32 Len)
+{
+    u8* D   = (u8 *)_D;
+    u32 Sum = 0;
+    u8* E   = D + (Len&(~1));
+
+    while (D < E)
+    {
+        u16 v = (D[1]<<8) | (D[0]);
+        Sum += v;
+        D += 2;
+    }
+
+    if (Len&1)
+    {
+        Sum += *D;
+    }
+
+    u16* Src = (u16*)&IPHeader->Src;
+    u16* Dst = (u16*)&IPHeader->Dst;
+
+    Sum += Src[0];
+    Sum += Src[1];
+
+    Sum += Dst[0];
+    Sum += Dst[1];
+
+    Sum += swap16(IPHeader->Proto);
+    Sum += swap16(Len);
+
+    while (Sum>>16)
+	{
+        Sum = (Sum & 0xFFFF) + (Sum >> 16);
+	}
+
+    return ~Sum;
+}
+*/
+
+
+//-------------------------------------------------------------------------------------------------
 // gaussian random number, mean=0, stdev=1
 // per Knuth method 3 http://c-faq.com/lib/gaussian.html
 double randg(double mean, double stdev)
@@ -313,17 +392,16 @@ memset(Histo, 0, sizeof(Histo));
 		Ether->Dst[5] = randu(0, 0x100);
 
 		// IPv4
-		Ether->Proto = swap16(ETHER_PROTO_IPV4);
+		Ether->Proto 	= swap16(ETHER_PROTO_IPV4);
 
 		IP4Header_t* IPv4 = (IP4Header_t*)(Ether + 1);	
-		IPv4->Version 	= 45;
+		IPv4->Version 	= 0x45;
 		IPv4->Service 	= 0;
-		IPv4->Len 		= 0;
+		IPv4->Len 		= swap16(s_TargetPktSize - sizeof(fEther_t) - sizeof(IP4Header_t) );
 		IPv4->Ident 	= 0;
-		IPv4->Frag 		= 0;
+		IPv4->Frag 		= (2<<5);
 		IPv4->TTL 		= 64;
 		IPv4->Proto 	= F->IPProto;
-		IPv4->CSum 		= 0;
 /*
 		IPv4->Src.IP[0] = randu(0, 0x100);
 		IPv4->Src.IP[1] = randu(0, 0x100);
@@ -341,14 +419,21 @@ memset(Histo, 0, sizeof(Histo));
 		IPv4->Src.IP[1] = (i >> 16) & 0xFF; 
 		IPv4->Src.IP[2] = (i >>  8) & 0xFF; 
 		IPv4->Src.IP[3] = (i >>  0) & 0xFF; 
-		IPv4->Dst.IP4 	= 0xffffffff - i;
+
+		IPv4->Dst.IP[0] = (i >> 24) & 0xFF; 
+		IPv4->Dst.IP[1] = (i >> 16) & 0xFF; 
+		IPv4->Dst.IP[2] = (i >>  8) & 0xFF; 
+		IPv4->Dst.IP[3] = 240; 
+
+		IPv4->CSum 		= 0; 
+		IPv4->CSum 		= IP4Checksum( (u16*)IPv4, sizeof(IP4Header_t) );
 
 		TCPHeader_t* TCP = (TCPHeader_t*)(IPv4 + 1);
 		TCP->PortSrc	= randu(0, 0x10000);
 		TCP->PortDst	= randu(0, 0x10000);
 		TCP->SeqNo		= 0; 
 		TCP->AckNo		= 0; 
-		TCP->Flags		= 0; 
+		TCP->Flags		= swap16((sizeof(TCPHeader_t) >> 2) << 12);
 		TCP->Window		= 0; 
 		TCP->Urgent		= 0; 
 		TCP->CSUM		= 0; 
@@ -386,6 +471,7 @@ memset(Histo, 0, sizeof(Histo));
 		//u32 FlowIndex 	= ((u64)rand() * (u64)s_FlowCnt) / (u64)RAND_MAX;
 		//FlowIndex 		= max32(FlowIndex, s_FlowCnt - 1);	
 		u32 FlowIndex 		= PktCnt % (u32)s_FlowCnt; 
+		assert(FlowIndex < s_FlowCnt);
 		/*	
 		static u32 FlowIndex = 0;
 		FlowIndex++;
