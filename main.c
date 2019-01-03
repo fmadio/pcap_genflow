@@ -413,8 +413,6 @@ memset(Histo, 0, sizeof(Histo));
 		IPv4->Dst.IP[2] = randu(0, 0x100);
 		IPv4->Dst.IP[3] = randu(0, 0x100);
 */
-		//IPv4->Src.IP4 	= i;
-
 		IPv4->Src.IP[0] = (i >> 24) & 0xFF; 
 		IPv4->Src.IP[1] = (i >> 16) & 0xFF; 
 		IPv4->Src.IP[2] = (i >>  8) & 0xFF; 
