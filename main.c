@@ -377,19 +377,19 @@ memset(Histo, 0, sizeof(Histo));
 		// generate packet	
 		fEther_t* Ether = (fEther_t*)&F->Payload;	
 
-		Ether->Src[0] = randu(0, 0x100);
-		Ether->Src[1] = randu(0, 0x100);
-		Ether->Src[2] = randu(0, 0x100);
-		Ether->Src[3] = randu(0, 0x100);
-		Ether->Src[4] = randu(0, 0x100);
-		Ether->Src[5] = randu(0, 0x100);
+		Ether->Src[0] 	= randu(0, 0x100);
+		Ether->Src[1] 	= randu(0, 0x100);
+		Ether->Src[2] 	= randu(0, 0x100);
+		Ether->Src[3] 	= randu(0, 0x100);
+		Ether->Src[4] 	= randu(0, 0x100);
+		Ether->Src[5] 	= randu(0, 0x100);
 
-		Ether->Dst[0] = randu(0, 0x100);
-		Ether->Dst[1] = randu(0, 0x100);
-		Ether->Dst[2] = randu(0, 0x100);
-		Ether->Dst[3] = randu(0, 0x100);
-		Ether->Dst[4] = randu(0, 0x100);
-		Ether->Dst[5] = randu(0, 0x100);
+		Ether->Dst[0] 	= randu(0, 0x100);
+		Ether->Dst[1] 	= randu(0, 0x100);
+		Ether->Dst[2] 	= randu(0, 0x100);
+		Ether->Dst[3] 	= randu(0, 0x100);
+		Ether->Dst[4] 	= randu(0, 0x100);
+		Ether->Dst[5] 	= randu(0, 0x100);
 
 		// IPv4
 		Ether->Proto 	= swap16(ETHER_PROTO_IPV4);
@@ -397,7 +397,7 @@ memset(Histo, 0, sizeof(Histo));
 		IP4Header_t* IPv4 = (IP4Header_t*)(Ether + 1);	
 		IPv4->Version 	= 0x45;
 		IPv4->Service 	= 0;
-		IPv4->Len 		= swap16(s_TargetPktSize - sizeof(fEther_t) - sizeof(IP4Header_t) );
+		IPv4->Len 		= swap16( s_TargetPktSize - sizeof(fEther_t) - sizeof(IP4Header_t) );
 		IPv4->Ident 	= 0;
 		IPv4->Frag 		= (2<<5);
 		IPv4->TTL 		= 64;
