@@ -289,6 +289,9 @@ void trace(char* Message, ...)
 
 int main(int argc, char* argv[])
 {
+	bool IsChunked 	= false; 
+	s32 CPUID 		= -1;
+
 	fprintf(stderr, "PCAP Flow Packet Generator : FMADIO 10G 40G 100G Packet Capture : http://www.fmad.io\n");
 	for (int i=1; i < argc; i++)
 	{
@@ -325,15 +328,32 @@ int main(int argc, char* argv[])
 		{
 			s_TargetBps = atof(argv[i+1]);
 			fprintf(stderr, "  Target Rate: %.3f Gbps\n", s_TargetBps / 1e9);
-			i++;	
+			i++;
 		}
+		if (strcmp(argv[i], "--chunked") == 0)
+		{
+			fprintf(stderr, "  Chunked Packet Output\n"); 
+			IsChunked = true;
+		}
+		if (strcmp(argv[i], "--cpu") == 0)
+		{
+			CPUID = atoi(argv[i+1]);	
+			fprintf(stderr, "  CPU Assignment %i\n", CPUID); 
+		}
+	}
+	if (CPUID >= 0) 
+	{
+		cpu_set_t Thread0CPU;
+		CPU_ZERO(&Thread0CPU);
+		CPU_SET (CPUID, &Thread0CPU);
+		pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &Thread0CPU);
 	}
 
 	FILE* OutFile = stdout;
 
 	// write output pcap header 
 	PCAPHeader_t		Header;
-	Header.Magic		= PCAPHEADER_MAGIC_NANO;
+	Header.Magic		= IsChunked ? PCAPHEADER_MAGIC_FMAD : PCAPHEADER_MAGIC_NANO;
 	Header.Major		= PCAPHEADER_MAJOR;
 	Header.Minor		= PCAPHEADER_MINOR;
 	Header.TimeZone		= 0; 
@@ -345,9 +365,6 @@ int main(int argc, char* argv[])
 		fprintf(stderr, "Failed to write header to output\n");
 		return 0;
 	}
-
-u32 Histo[9200];
-memset(Histo, 0, sizeof(Histo));
 
 	// start time
 	u64 TSStart 		= clock_ns();
@@ -413,6 +430,7 @@ memset(Histo, 0, sizeof(Histo));
 		IPv4->Dst.IP[2] = randu(0, 0x100);
 		IPv4->Dst.IP[3] = randu(0, 0x100);
 */
+
 		IPv4->Src.IP[0] = (i >> 24) & 0xFF; 
 		IPv4->Src.IP[1] = (i >> 16) & 0xFF; 
 		IPv4->Src.IP[2] = (i >>  8) & 0xFF; 
@@ -440,9 +458,16 @@ memset(Histo, 0, sizeof(Histo));
 		F->PayloadLength = (u8*)(TCP + 1) - (u8*)Ether;
 	}
 
-	u64 PktCnt 		= 0;
-	double TSOffset = 0;
-	double NSperBit	= 1e9 / TargetGbps;
+	u64 PktCnt 			= 0;
+	double TSOffset 	= 0;
+	double NSperBit		= 1e9 / TargetGbps;
+
+	u32 ChunkBufferPos 	= 0;
+	u32 ChunkBufferMax 	= kKB(256);
+	u8* ChunkBuffer 	= malloc( 1024*1024); 
+
+	FMADHeader_t		ChunkHeader;
+	memset(&ChunkHeader, 0, sizeof(ChunkHeader));
 
 	int wlen;
 	while (PktCnt < TargetPkt)
@@ -460,53 +485,67 @@ memset(Histo, 0, sizeof(Histo));
 		Pkt.LengthWire		= Length;
 		Pkt.LengthCapture	= (Length < LengthSlice) ? Length : LengthSlice;
 
-		// write header
-		wlen = fwrite(&Pkt, 1, sizeof(Pkt), OutFile);
-		if (wlen != sizeof(Pkt)) break;
+		u32 FlowIndex 		= PktCnt % (u32)s_FlowCnt; 
+		assert(FlowIndex < s_FlowCnt);
+		Flow_t* F = &s_FlowList[FlowIndex];	
 
 		// select a randomized flow
 		//u32 FlowIndex 	= randu(0, s_FlowCnt);
 		//u32 FlowIndex 	= ((u64)rand() * (u64)s_FlowCnt) / (u64)RAND_MAX;
 		//FlowIndex 		= max32(FlowIndex, s_FlowCnt - 1);	
-		u32 FlowIndex 		= PktCnt % (u32)s_FlowCnt; 
-		assert(FlowIndex < s_FlowCnt);
-		/*	
-		static u32 FlowIndex = 0;
-		FlowIndex++;
-		if (FlowIndex >= s_FlowCnt) FlowIndex = 0;
-		*/
-		Flow_t* F = &s_FlowList[FlowIndex];	
+		if (!IsChunked)
+		{
+			// write header
+			wlen = fwrite(&Pkt, 1, sizeof(Pkt), OutFile);
+			if (wlen != sizeof(Pkt)) break;
 
-		// write header
-		wlen = fwrite(F->Payload, 1, F->PayloadLength, OutFile);
-		if (wlen != F->PayloadLength) break;
+			// write header
+			wlen = fwrite(F->Payload, 1, F->PayloadLength, OutFile);
+			if (wlen != F->PayloadLength) break;
 
-		// write padding
-		wlen = fwrite(OutputBuffer, 1, Pkt.LengthCapture - F->PayloadLength, OutFile);
-		if (wlen != Pkt.LengthCapture - F->PayloadLength) break;
+			// write padding
+			wlen = fwrite(OutputBuffer, 1, Pkt.LengthCapture - F->PayloadLength, OutFile);
+			if (wlen != Pkt.LengthCapture - F->PayloadLength) break;
+		}
+		else
+		{
+			FMADPacket_t* P 	= (FMADPacket_t*)(ChunkBuffer + ChunkBufferPos);
+			P->TS 				= TS;
+			P->LengthWire		= Pkt.LengthWire;
+			P->LengthCapture 	= Pkt.LengthCapture;
+			P->PortNo			= 0;
+			P->Flag				= 0;
+			P->pad0				= 0;
+
+			memcpy(P+1, F->Payload, F->PayloadLength); 
+
+			ChunkBufferPos += sizeof(PCAPPacket_t) + Pkt.LengthCapture;	
+
+			ChunkHeader.PktCnt		+= 1;
+			ChunkHeader.ByteWire	+= Pkt.LengthWire;
+			ChunkHeader.ByteCapture	+= Pkt.LengthCapture;
+
+			if (ChunkHeader.TSStart == 0) ChunkHeader.TSStart = TS; 
+			ChunkHeader.TSEnd 		= TS; 
+
+			// flush buffer
+			if (ChunkBufferPos > ChunkBufferMax - kKB(16))
+			{
+				// write chunk header
+				ChunkHeader.Length = ChunkBufferPos;	
+				fwrite(&ChunkHeader, 1, sizeof(ChunkHeader), OutFile);
+
+				fwrite(ChunkBuffer, 1, ChunkBufferPos, OutFile);
+				ChunkBufferPos = 0;
+
+				// reset
+				memset(&ChunkHeader, 0, sizeof(ChunkHeader));
+			}
+		}
 
 		//fprintf(stderr, "%8i\n", Length);
-
-		PktCnt++;
-
-		TSOffset += Length * 8 * NSperBit;
-
-		Histo[Length/32]++;
+		PktCnt		+= 1;
+		TSOffset 	+= Length * 8 * NSperBit;
 	}
-
-/*
-u32 max = 0;
-for (int i=0; i < 9200/32; i++)
-{
-	max = max32(Histo[i], max);
-}
-for (int i=0; i < 9200/32; i++)
-{
-	fprintf(stderr, "%5i : %8i :", i*32, Histo[i]);
-	for (int j=0; j < Histo[i] * 100 / max; j++) fprintf(stderr, "*");
-	fprintf(stderr, "\n");
-}
-*/
-
 	return 0;
 }

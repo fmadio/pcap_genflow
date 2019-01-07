@@ -9,6 +9,7 @@ DEF += -D_GNU_SOURCE
 
 LIBS =
 LIBS += -lm
+LIBS += -lpthread
 
 %.o: %.c
 	gcc $(DEF) -c -o $@ $<
