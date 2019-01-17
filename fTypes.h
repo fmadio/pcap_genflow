@@ -623,6 +623,13 @@ typedef struct FMADHeader_t
 	u64				TSStart;				// TS of first packet
 	u64				TSEnd;					// TS of last packet 
 
+	// internal performance stats passed downstream
+	u64				BytePending;			// how many bytes pending 
+	u16				CPUActive;				// cpu pct stream_cat is active  
+	u16				CPUFetch;	
+	u16				CPUSend;	
+	u16				pad1;	
+
 } __attribute__((packed)) FMADHeader_t;
 
 
