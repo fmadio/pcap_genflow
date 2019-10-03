@@ -302,50 +302,55 @@ int main(int argc, char* argv[])
 			Help();
 			return 0;
 		}
-		if (strcmp(argv[i], "--pktcnt") == 0)
+		else if (strcmp(argv[i], "--pktcnt") == 0)
 		{
 			s_TargetPktCnt = atof(argv[i+1]);
 			fprintf(stderr, "  PktCnt: %lli\n", s_TargetPktCnt);
 			i++;	
 		}
-		if (strcmp(argv[i], "--flowcnt") == 0)
+		else if (strcmp(argv[i], "--flowcnt") == 0)
 		{
 			s_TargetFlowCnt = atof(argv[i+1]);
 			fprintf(stderr, "  FlowCnt: %lli\n", s_TargetFlowCnt);
 			i++;	
 		}
-		if (strcmp(argv[i], "--pktsize") == 0)
+		else if (strcmp(argv[i], "--pktsize") == 0)
 		{
 			s_TargetPktSize = atof(argv[i+1]);
 			fprintf(stderr, "  PacketSize: %lli\n", s_TargetPktSize);
 			i++;	
 		}
-		if (strcmp(argv[i], "--pktslice") == 0)
+		else if (strcmp(argv[i], "--pktslice") == 0)
 		{
 			s_TargetPktSlice = atof(argv[i+1]);
 			fprintf(stderr, "  PacketSlice: %lli\n", s_TargetPktSlice);
 			i++;	
 		}
-		if (strcmp(argv[i], "--bps") == 0)
+		else if (strcmp(argv[i], "--bps") == 0)
 		{
 			s_TargetBps = atof(argv[i+1]);
 			fprintf(stderr, "  Target Rate: %.3f Gbps\n", s_TargetBps / 1e9);
 			i++;
 		}
-		if (strcmp(argv[i], "--chunked") == 0)
+		else if (strcmp(argv[i], "--chunked") == 0)
 		{
 			fprintf(stderr, "  Chunked Packet Output\n"); 
 			IsChunked = true;
 		}
-		if (strcmp(argv[i], "--cpu") == 0)
+		else if (strcmp(argv[i], "--cpu") == 0)
 		{
 			CPUID = atoi(argv[i+1]);	
 			fprintf(stderr, "  CPU Assignment %i\n", CPUID); 
 		}
-		if (strcmp(argv[i], "--imix") == 0)
+		else if (strcmp(argv[i], "--imix") == 0)
 		{
 			s_IsIMIX = true;
 			fprintf(stderr, "  IMIX Packet Distributioni\n"); 
+		}
+		else
+		{
+			fprintf(stderr, "invalid optin (%s)\n", argv[i]);
+			assert(false);	
 		}
 
 	}
