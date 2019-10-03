@@ -63,7 +63,8 @@ static u64 s_TargetPktCnt			= 1e6;			// number of packets to generate
 static u64 s_TargetFlowCnt			= 1e3;			// number of flows to generate 
 static u64 s_TargetPktSize			= 512;			// packet size to generate 
 static u64 s_TargetPktSlice			= 9200;			// how much to slice each packet 
-static u64 s_TargetBps				= 1e9;			// output data rate
+static u64 s_TargetBps				= 100e9;		// output data rate
+static bool s_IsIMIX				= false;		// generate packets based on imix distribution
 
 //-------------------------------------------------------------------------------------------------
 
@@ -79,6 +80,7 @@ static void Help(void)
 	fprintf(stderr, "--pktsize  <packet size>         : size of each packet\n");
 	fprintf(stderr, "--pktslice <packet slice amount> : packet slicing amount (default 0)\n");
 	fprintf(stderr, "--bps      <bits output rate>    : output generation rate (e.g. 1e9 = 1Gbps)\n");
+	fprintf(stderr, "--imix                           : user standard IMIX packet size distribution\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "\n");
 }
@@ -340,6 +342,12 @@ int main(int argc, char* argv[])
 			CPUID = atoi(argv[i+1]);	
 			fprintf(stderr, "  CPU Assignment %i\n", CPUID); 
 		}
+		if (strcmp(argv[i], "--imix") == 0)
+		{
+			s_IsIMIX = true;
+			fprintf(stderr, "  IMIX Packet Distributioni\n"); 
+		}
+
 	}
 	if (CPUID >= 0) 
 	{
@@ -474,6 +482,32 @@ int main(int argc, char* argv[])
 	{
 		//u32 Length = 64 + (MTU - 64) * fabs(randg(0, 1)); 
 		u32 Length = s_TargetPktSize; 
+
+
+		// IMIX packet size distribution 
+		if (s_IsIMIX)
+		{
+			static u32 IMIXCnt = 0;
+			switch (IMIXCnt)
+			{
+			case  0: Length =  576; break;
+			case  1: Length =   64; break;
+			case  2: Length =  576; break;
+			case  3: Length =   64; break;
+			case  4: Length =  576; break;
+			case  5: Length =   64; break;
+			case  6: Length =  576; break;
+			case  7: Length =   64; break;
+			case  8: Length =   64; break;
+			case  9: Length =   64; break;
+			case 10: Length =   64; break;
+			case 11: Length = 1500; break;
+			default:
+				fprintf(stderr, "invalid %i\n", IMIXCnt);
+				assert(false);
+			}
+			IMIXCnt = (IMIXCnt + 1) % 12;
+		}
 
 		// TSOffset is sub-nano, need to seperate into a base + offset
 		u64 TS = TSStart + TSOffset;
