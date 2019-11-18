@@ -18,4 +18,9 @@ Options:
 --pktslice <packet slice amount> : packet slicing amount (default 0)
 --bps      <bits output rate>    : output generation rate (e.g. 1e9 = 1Gbps)
 
+
+Generate PCAP from histogram example:
+./pcap_genflow --histogram <path>/histograms.bin > test.pcap
+
+
 ```
