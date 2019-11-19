@@ -1,3 +1,4 @@
+/* vim: set ts=4 sts=4 */
 //---------------------------------------------------------------------------------------------
 //
 // Copyright (c) 2018, fmad engineering llc 
@@ -38,6 +39,7 @@
 #include <linux/sched.h>
 
 #include "fTypes.h"
+#include "histogram.h"
 
 //-------------------------------------------------------------------------------------------------
 typedef struct
@@ -65,6 +67,7 @@ static u64 s_TargetPktSize			= 512;			// packet size to generate
 static u64 s_TargetPktSlice			= 9200;			// how much to slice each packet 
 static u64 s_TargetBps				= 100e9;		// output data rate
 static bool s_IsIMIX				= false;		// generate packets based on imix distribution
+static char *s_Histogram			= NULL;			// Historam file
 
 //-------------------------------------------------------------------------------------------------
 
@@ -81,6 +84,7 @@ static void Help(void)
 	fprintf(stderr, "--pktslice <packet slice amount> : packet slicing amount (default 0)\n");
 	fprintf(stderr, "--bps      <bits output rate>    : output generation rate (e.g. 1e9 = 1Gbps)\n");
 	fprintf(stderr, "--imix                           : user standard IMIX packet size distribution\n");
+	fprintf(stderr, "--histogram <filename>           : histogram file name to generate packet flow\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "\n");
 }
@@ -287,6 +291,194 @@ void trace(char* Message, ...)
 	fflush(stderr);
 }
 
+static int GenerateFlow(Flow_t *F, HistogramDump_t *H)
+{
+	F->IPProto = H->IPProto;
+
+	// generate packet
+	fEther_t* Ether = (fEther_t*)&F->Payload;
+
+	Ether->Src[0] 	= randu(0, 0x100);
+	Ether->Src[1] 	= randu(0, 0x100);
+	Ether->Src[2] 	= randu(0, 0x100);
+	Ether->Src[3] 	= randu(0, 0x100);
+	Ether->Src[4] 	= randu(0, 0x100);
+	Ether->Src[5] 	= randu(0, 0x100);
+
+	Ether->Dst[0] 	= randu(0, 0x100);
+	Ether->Dst[1] 	= randu(0, 0x100);
+	Ether->Dst[2] 	= randu(0, 0x100);
+	Ether->Dst[3] 	= randu(0, 0x100);
+	Ether->Dst[4] 	= randu(0, 0x100);
+	Ether->Dst[5] 	= randu(0, 0x100);
+
+	/* TODO: IPv6 ? */
+	// IPv4
+	Ether->Proto 	= swap16(ETHER_PROTO_IPV4);
+
+	IP4Header_t* IPv4 = (IP4Header_t*)(Ether + 1);
+	IPv4->Version 	= 0x45;
+	IPv4->Service 	= 0;
+	IPv4->Len 		= 0;
+	IPv4->Ident 	= 0;
+	IPv4->Frag 		= (2<<5);
+	IPv4->TTL 		= 64;
+	IPv4->Proto 	= F->IPProto;
+
+	u32 i			= H->FlowID;
+
+	IPv4->Src.IP[0] = (i >> 24) & 0xFF;
+	IPv4->Src.IP[1] = (i >> 16) & 0xFF;
+	IPv4->Src.IP[2] = (i >>  8) & 0xFF;
+	IPv4->Src.IP[3] = (i >>  0) & 0xFF;
+
+	IPv4->Dst.IP[0] = (i >> 24) & 0xFF;
+	IPv4->Dst.IP[1] = (i >> 16) & 0xFF;
+	IPv4->Dst.IP[2] = (i >>  8) & 0xFF;
+	IPv4->Dst.IP[3] = 240;
+
+	IPv4->CSum 		= 0;
+
+	F->IPv4			= IPv4;
+
+	if (F->IPProto == IPv4_PROTO_TCP)
+	{
+		TCPHeader_t* TCP = (TCPHeader_t*)(IPv4 + 1);
+		TCP->PortSrc	= randu(0, 0x10000);
+		TCP->PortDst	= randu(0, 0x10000);
+		TCP->SeqNo		= 0;
+		TCP->AckNo		= 0;
+		TCP->Flags		= swap16((sizeof(TCPHeader_t) >> 2) << 12);
+		TCP->Window		= 0;
+		TCP->Urgent		= 0;
+		TCP->CSUM		= 0;
+
+		// total length of the header
+		F->PayloadLength = (u8*)(TCP + 1) - (u8*)Ether;
+		F->TCP			= TCP;
+	}
+	else if (F->IPProto == IPv4_PROTO_UDP)
+	{
+		UDPHeader_t* UDP = (UDPHeader_t*)(IPv4 + 1);
+
+		UDP->PortSrc	= randu(0, 0x10000);
+		UDP->PortDst	= randu(0, 0x10000);
+		UDP->Length		= 0;
+		UDP->CSUM		= 0;
+
+		// total length of the header
+		F->PayloadLength = (u8*)(UDP + 1) - (u8*)Ether;
+		F->UDP			= UDP;
+	}
+	else
+	{
+		fprintf(stderr, "IPProto: %d not supported!\n", F->IPProto);
+		return -1;
+	}
+	return 0;
+}
+
+static int CreateHistogramFlow(const char *Histogram)
+{
+	FILE *F = fopen(Histogram, "r");
+	if (F == NULL)
+	{
+		fprintf(stderr, "Failed to open %s file\n", Histogram);
+		return -1;
+	}
+
+	struct stat st;
+	memset(&st, 0, sizeof(st));
+	if (stat(Histogram, &st) != 0)
+	{
+		fprintf(stderr, "stat %s failed\n", Histogram);
+		fclose(F);
+		return -1;
+	}
+	fprintf(stderr, "Histogram file size: %lu Bytes\n", st.st_size);
+
+	u8 *fb = malloc(st.st_size +  1);
+	if (fb == NULL)
+	{
+		fprintf(stderr, "failed to malloc file size memory\n");
+		fclose(F);
+		return -1;
+	}
+	int ret = fread(fb, st.st_size, 1, F);
+	if (ret != 1)
+	{
+		fprintf(stderr, "fread failed!\n");
+		fclose(F);
+		return -1;
+	}
+
+	u8* OutputBuffer    = malloc(16*1024);
+	memset(OutputBuffer, 0, 16*1024);
+
+	Flow_t Flow;
+	u8 *Buffer = fb;
+	u64 count = 0;
+
+	while ((Buffer - fb) < st.st_size)
+	{
+		Flow_t *F = &Flow;
+		HistogramDump_t *H = (HistogramDump_t *)Buffer;
+		if (H->signature != HISTOGRAM_SIG_V1)
+		{
+			fprintf(stderr, "Histogram signature invalid!\n");
+			break;
+		}
+		//fprintf(stderr, "Histogram: %u %d %d %d %llu %llu\n", H->FlowID, H->MACProto, H->IPProto, H->DSCPStr, H->FirstTS, H->TotalPkt);
+
+		memset(F, 0, sizeof(F));
+		GenerateFlow(F, H);
+
+		PacketInfo_t *P = (PacketInfo_t *)(H+1);
+
+		for (u32 i = 0; i < H->TotalPkt ; i++)
+		{
+			//F->IPv4->Len		= swap16(P->PktSize - sizeof(fEther_t) - sizeof(IP4Header_t));
+			F->IPv4->Len		= swap16(P->PktSize - sizeof(fEther_t));
+			F->IPv4->CSum		= 0;
+			F->IPv4->CSum		= IP4Checksum( (u16*)F->IPv4, sizeof(IP4Header_t));
+
+			if (H->IPProto == IPv4_PROTO_UDP)
+			{
+				F->UDP->Length	= swap16(P->PktSize - F->PayloadLength - sizeof(UDPHeader_t));
+			}
+			//fprintf(stderr, "P->PktSize: %u F->PayloadLength: %d UDPHeader_t: %d UDP len: %X\n", P->PktSize, F->PayloadLength, sizeof(UDPHeader_t), F->UDP->Length);
+
+			// PCAP prepare logic
+			PCAPPacket_t Pkt;
+			u64 TS				= H->FirstTS + P->TSDiff;
+			Pkt.Sec				= TS / 1e9;
+			Pkt.NSec			= (u64)Pkt.Sec * 1000000000ULL;
+
+			Pkt.LengthWire		= P->PktSize;
+			//Pkt.LengthCapture	= P->PktSize;
+			Pkt.LengthCapture	= (P->PktSize < s_TargetPktSlice) ? P->PktSize : s_TargetPktSlice;
+
+			int wlen;
+			// write header
+			wlen = fwrite(&Pkt, sizeof(Pkt), 1, stdout);
+			if (wlen != 1) break;
+			wlen = fwrite(F->Payload, F->PayloadLength, 1, stdout);
+			if (wlen != 1) break;
+
+			// write padding
+			wlen = fwrite(OutputBuffer, Pkt.LengthCapture - F->PayloadLength, 1, stdout);
+			if (wlen != 1) break;
+
+			count++;
+			P = P+1;
+		}
+		//Buffer = (u8 *)P;
+		Buffer = Buffer + sizeof(HistogramDump_t) + H->TotalPkt * sizeof(PacketInfo_t);
+	}
+	fclose(F);
+	fprintf(stderr, "Total packet count: %llu\n", count);
+}
+
 //-------------------------------------------------------------------------------------------------
 
 int main(int argc, char* argv[])
@@ -347,6 +539,12 @@ int main(int argc, char* argv[])
 			s_IsIMIX = true;
 			fprintf(stderr, "  IMIX Packet Distributioni\n"); 
 		}
+		else if (strcmp(argv[i], "--histogram") == 0)
+		{
+			s_Histogram = argv[i+1];
+			fprintf(stderr, "  Histogram: %s\n", s_Histogram);
+			i++;
+		}
 		else
 		{
 			fprintf(stderr, "invalid optin (%s)\n", argv[i]);
@@ -387,6 +585,12 @@ int main(int argc, char* argv[])
 	u32 TargetFlow		= s_TargetFlowCnt;
 	u32 LengthSlice		= s_TargetPktSlice;				// slice amount
 	float TargetGbps 	= s_TargetBps;
+
+	if (s_Histogram)
+	{
+		CreateHistogramFlow(s_Histogram);
+		return 0;
+	}
 
 	// output payload buffer
 	u8* OutputBuffer	= malloc(16*1024);
