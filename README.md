@@ -22,5 +22,8 @@ Options:
 Generate PCAP from histogram example:
 ./pcap_genflow --histogram <path>/histograms.bin > test.pcap
 
+Convert binary histogram to text histogram example:
+./pcap_genflow --histogram-bin2txt <path>/histograms.bin > test.txt
+
 
 ```

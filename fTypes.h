@@ -632,6 +632,74 @@ typedef struct FMADHeader_t
 
 } __attribute__((packed)) FMADHeader_t;
 
+static const char* MACProto2Str(u16 MACProto)
+{
+	switch (MACProto)
+	{
+	case ETHER_PROTO_ARP:	return "ARP";	break;
+	case ETHER_PROTO_IPV4:	return "IPv4";	break;
+	case ETHER_PROTO_IPV6:	return "IPv6";	break;
+	case ETHER_PROTO_VLAN:	return "VLAN";	break;
+	case ETHER_PROTO_VNTAG:	return "VNTAG";	break;
+	case ETHER_PROTO_MPLS:	return "MPLS";	break;
+	default:				return "UNKNOWN_MACProto";
+		break;
+	}
+	// shouldn't reach here
+	assert(0);
+}
+
+static const char* IPProto2Str(u8 IPProto)
+{
+	switch (IPProto)
+	{
+	case IPv4_PROTO_UDP:	return "UDP";	break;
+	case IPv4_PROTO_TCP:	return "TCP";	break;
+	case IPv4_PROTO_IGMP:	return "IGMP";	break;
+	case IPv4_PROTO_ICMP:	return "ICMP";	break;
+	case IPv4_PROTO_GRE:	return "GRE";	break;
+	case IPv4_PROTO_VRRP:	return "VRRP";	break;
+	default:				return "UNKNOWN_IPProto";
+		break;
+	}
+	// shouldn't reach here
+	assert(0);
+}
+
+static const char* IPDSCP2Str(u8 IPDSCP)
+{
+	switch (IPDSCP)
+	{
+	case 0x2e: return "EF"; break;
+
+	// from wiki https://en.wikipedia.org/wiki/Differentiated_services
+	case 0x0a: return "AF11"; break;
+	case 0x0c: return "AF12"; break;
+	case 0x0e: return "AF13"; break;
+	case 0x12: return "AF21"; break;
+	case 0x14: return "AF22"; break;
+	case 0x16: return "AF23"; break;
+	case 0x1a: return "AF31"; break;
+	case 0x1c: return "AF32"; break;
+	case 0x1e: return "AF33"; break;
+	case 0x22: return "AF41"; break;
+	case 0x24: return "AF42"; break;
+	case 0x26: return "AF43"; break;
+
+	// from https://www.cisco.com/c/en/us/td/docs/switches/datacenter/nexus1000/sw/4_0/qos/configuration/guide/nexus1000v_qos/qos_6dscp_val.pdf
+	case 0x08: return "CS1"; break;
+	case 0x10: return "CS2"; break;
+	case 0x18: return "CS3"; break;
+	case 0x20: return "CS4"; break;
+	case 0x28: return "CS5"; break;
+	case 0x30: return "CS6"; break;
+	case 0x38: return "CS7"; break;
+	default:   return "UNKNOWN_IPDSCP";
+		break;
+	}
+	// shouldn't reach here
+	assert(0);
+}
 
 
 #endif
