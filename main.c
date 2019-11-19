@@ -84,6 +84,7 @@ static void Help(void)
 	fprintf(stderr, "--pktslice <packet slice amount> : packet slicing amount (default 0)\n");
 	fprintf(stderr, "--bps      <bits output rate>    : output generation rate (e.g. 1e9 = 1Gbps)\n");
 	fprintf(stderr, "--imix                           : user standard IMIX packet size distribution\n");
+	fprintf(stderr, "--histogram <filename>           : histogram file name to generate packet flow\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "\n");
 }
