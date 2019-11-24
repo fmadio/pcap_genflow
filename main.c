@@ -423,7 +423,7 @@ static int CreateHistogramFlow(const char *Histogram)
 	if (Histogram_Stats)
 	{
 		fprintf(stdout, "-------------------- Format --------------------\n");
-		fprintf(stdout, "Flow <N> | ETHProto | IPProto | IPDSCP | First TS | Total Packets\n");
+		fprintf(stdout, "Flow <N> | ETHProto | IPProto | IPDSCP | VLAN bits | MPLS bits | First TS | Total Packets\n");
 		fprintf(stdout, "\tTSDiff PktSize | TSDiff PktSize | ... |\n");
 		fprintf(stdout, "----------------------- --- --------------------\n\n");
 
@@ -435,8 +435,11 @@ static int CreateHistogramFlow(const char *Histogram)
 				fprintf(stderr, "Histogram signature invalid!\n");
 				break;
 			}
-			fprintf(stdout, "Flow %u | %s | %s | %s | %llu | %llu", H->FlowID, MACProto2Str(H->MACProto),
-					IPProto2Str(H->IPProto), IPDSCP2Str(H->IPDSCP), H->FirstTS, H->TotalPkt);
+			fprintf(stdout, "Flow %u | %s | %s | %s | %d,%d,%d | %d,%d,%d | %llu | %llu",
+					H->FlowID, MACProto2Str(H->MACProto), IPProto2Str(H->IPProto), IPDSCP2Str(H->IPDSCP),
+					GET_VLAN_BIT(H, 0), GET_VLAN_BIT(H, 1), GET_VLAN_BIT(H, 2),
+					GET_MPLS_BIT(H, 0), GET_MPLS_BIT(H, 1), GET_MPLS_BIT(H, 2),
+					H->FirstTS, H->TotalPkt);
 
 			PacketInfo_t *P = (PacketInfo_t *)(H+1);
 			for (u32 i = 0; i < H->TotalPkt ; i++)
@@ -485,6 +488,7 @@ static int CreateHistogramFlow(const char *Histogram)
 		memset(F, 0, sizeof(F));
 		int GenFlowRet = GenerateFlow(F, H);
 
+		u64 TS			= H->FirstTS;
 		PacketInfo_t *P = (PacketInfo_t *)(H+1);
 
 		for (u32 i = 0; i < H->TotalPkt ; i++)
@@ -509,7 +513,7 @@ static int CreateHistogramFlow(const char *Histogram)
 
 			// PCAP prepare logic
 			PCAPPacket_t Pkt;
-			u64 TS				= H->FirstTS + P->TSDiff;
+			TS					= TS + P->TSDiff;
 			Pkt.Sec				= TS / 1e9;
 			Pkt.NSec			= (u64)Pkt.Sec * 1000000000ULL;
 
