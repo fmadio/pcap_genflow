@@ -67,6 +67,7 @@ static u64 s_TargetPktSize			= 512;			// packet size to generate
 static u64 s_TargetPktSlice			= 9200;			// how much to slice each packet 
 static u64 s_TargetBps				= 100e9;		// output data rate
 static bool s_IsIMIX				= false;		// generate packets based on imix distribution
+static bool Histogram_Stats			= false;		// generate histogram text format stats only
 static char *s_Histogram			= NULL;			// Historam file
 
 //-------------------------------------------------------------------------------------------------
@@ -84,7 +85,8 @@ static void Help(void)
 	fprintf(stderr, "--pktslice <packet slice amount> : packet slicing amount (default 0)\n");
 	fprintf(stderr, "--bps      <bits output rate>    : output generation rate (e.g. 1e9 = 1Gbps)\n");
 	fprintf(stderr, "--imix                           : user standard IMIX packet size distribution\n");
-	fprintf(stderr, "--histogram <filename>           : histogram file name to generate packet flow\n");
+	fprintf(stderr, "--histogram <filename>           : histogram (binary format) file name to generate packet flow\n");
+	fprintf(stderr, "--histogram-bin2txt <filename>   : converts histogram binary file to text format\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "\n");
 }
@@ -417,7 +419,60 @@ static int CreateHistogramFlow(const char *Histogram)
 
 	Flow_t Flow;
 	u8 *Buffer = fb;
-	u64 count = 0;
+
+	if (Histogram_Stats)
+	{
+		fprintf(stdout, "-------------------- Format --------------------\n");
+		fprintf(stdout, "Flow <N> | ETHProto | IPProto | IPDSCP | VLAN bits | MPLS bits | First TS | Total Packets\n");
+		fprintf(stdout, "\tTSDiff PktSize | TSDiff PktSize | ... |\n");
+		fprintf(stdout, "----------------------- --- --------------------\n\n");
+
+		while ((Buffer - fb) < st.st_size)
+		{
+			HistogramDump_t *H = (HistogramDump_t *)Buffer;
+			if (H->signature != HISTOGRAM_SIG_V1)
+			{
+				fprintf(stderr, "Histogram signature invalid!\n");
+				break;
+			}
+			fprintf(stdout, "Flow %u | %s | %s | %s | %d,%d,%d | %d,%d,%d | %llu | %llu",
+					H->FlowID, MACProto2Str(H->MACProto), IPProto2Str(H->IPProto), IPDSCP2Str(H->IPDSCP),
+					GET_VLAN_BIT(H, 0), GET_VLAN_BIT(H, 1), GET_VLAN_BIT(H, 2),
+					GET_MPLS_BIT(H, 0), GET_MPLS_BIT(H, 1), GET_MPLS_BIT(H, 2),
+					H->FirstTS, H->TotalPkt);
+
+			PacketInfo_t *P = (PacketInfo_t *)(H+1);
+			for (u32 i = 0; i < H->TotalPkt ; i++)
+			{
+				if (i%10 == 0) fprintf(stdout, "\n\t");
+				fprintf(stdout, "%u %d | ", P->TSDiff, P->PktSize);
+				P = P+1;
+			}
+			fprintf(stdout, "\n");
+			Buffer = Buffer + sizeof(HistogramDump_t) + H->TotalPkt * sizeof(PacketInfo_t);
+		}
+		fclose(F);
+		free(fb);
+		free(OutputBuffer);
+		return 0;
+	}
+
+	// write output pcap header
+	PCAPHeader_t		Header;
+	Header.Magic		= PCAPHEADER_MAGIC_NANO;
+	Header.Major		= PCAPHEADER_MAJOR;
+	Header.Minor		= PCAPHEADER_MINOR;
+	Header.TimeZone		= 0;
+	Header.SigFlag		= 0;
+	Header.SnapLen		= 65535;
+	Header.Link			= PCAPHEADER_LINK_ETHERNET;
+	if (fwrite(&Header, sizeof(Header), 1, stdout) != 1)
+	{
+		fprintf(stderr, "Failed to write header to output\n");
+		return 0;
+	}
+
+	u64 Count = 0, SkipCount = 0;
 
 	while ((Buffer - fb) < st.st_size)
 	{
@@ -431,12 +486,20 @@ static int CreateHistogramFlow(const char *Histogram)
 		//fprintf(stderr, "Histogram: %u %d %d %d %llu %llu\n", H->FlowID, H->MACProto, H->IPProto, H->DSCPStr, H->FirstTS, H->TotalPkt);
 
 		memset(F, 0, sizeof(F));
-		GenerateFlow(F, H);
+		int GenFlowRet = GenerateFlow(F, H);
 
+		u64 TS			= H->FirstTS;
 		PacketInfo_t *P = (PacketInfo_t *)(H+1);
 
 		for (u32 i = 0; i < H->TotalPkt ; i++)
 		{
+			// If the protocol is not supported then just skip the packet generation for this flow
+			if (GenFlowRet != 0)
+			{
+				P = P+1;
+				SkipCount++;
+				continue;
+			}
 			//F->IPv4->Len		= swap16(P->PktSize - sizeof(fEther_t) - sizeof(IP4Header_t));
 			F->IPv4->Len		= swap16(P->PktSize - sizeof(fEther_t));
 			F->IPv4->CSum		= 0;
@@ -450,7 +513,7 @@ static int CreateHistogramFlow(const char *Histogram)
 
 			// PCAP prepare logic
 			PCAPPacket_t Pkt;
-			u64 TS				= H->FirstTS + P->TSDiff;
+			TS					= TS + P->TSDiff;
 			Pkt.Sec				= TS / 1e9;
 			Pkt.NSec			= (u64)Pkt.Sec * 1000000000ULL;
 
@@ -469,14 +532,16 @@ static int CreateHistogramFlow(const char *Histogram)
 			wlen = fwrite(OutputBuffer, Pkt.LengthCapture - F->PayloadLength, 1, stdout);
 			if (wlen != 1) break;
 
-			count++;
+			Count++;
 			P = P+1;
 		}
 		//Buffer = (u8 *)P;
 		Buffer = Buffer + sizeof(HistogramDump_t) + H->TotalPkt * sizeof(PacketInfo_t);
 	}
 	fclose(F);
-	fprintf(stderr, "Total packet count: %llu\n", count);
+	fprintf(stderr, "Total packet count: %llu SkipCount: %llu\n", Count, SkipCount);
+	free(fb);
+	free(OutputBuffer);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -542,7 +607,14 @@ int main(int argc, char* argv[])
 		else if (strcmp(argv[i], "--histogram") == 0)
 		{
 			s_Histogram = argv[i+1];
-			fprintf(stderr, "  Histogram: %s\n", s_Histogram);
+			fprintf(stderr, "  Histogram filename: %s\n", s_Histogram);
+			i++;
+		}
+		else if (strcmp(argv[i], "--histogram-bin2txt") == 0)
+		{
+			s_Histogram = argv[i+1];
+			Histogram_Stats = true;
+			fprintf(stderr, "  Histogram filename: %s Histogram_Stats: True\n", s_Histogram);
 			i++;
 		}
 		else
@@ -558,6 +630,12 @@ int main(int argc, char* argv[])
 		CPU_ZERO(&Thread0CPU);
 		CPU_SET (CPUID, &Thread0CPU);
 		pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &Thread0CPU);
+	}
+
+	if (s_Histogram)
+	{
+		CreateHistogramFlow(s_Histogram);
+		return 0;
 	}
 
 	FILE* OutFile = stdout;
@@ -585,12 +663,6 @@ int main(int argc, char* argv[])
 	u32 TargetFlow		= s_TargetFlowCnt;
 	u32 LengthSlice		= s_TargetPktSlice;				// slice amount
 	float TargetGbps 	= s_TargetBps;
-
-	if (s_Histogram)
-	{
-		CreateHistogramFlow(s_Histogram);
-		return 0;
-	}
 
 	// output payload buffer
 	u8* OutputBuffer	= malloc(16*1024);
