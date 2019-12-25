@@ -69,6 +69,7 @@ static u64 s_TargetBps				= 100e9;		// output data rate
 static bool s_IsIMIX				= false;		// generate packets based on imix distribution
 static bool Histogram_Stats			= false;		// generate histogram text format stats only
 static char *s_Histogram			= NULL;			// Historam file
+static bool s_IsSortedOutput		= false;		// generate sorted TS pcap
 
 //-------------------------------------------------------------------------------------------------
 
@@ -86,6 +87,7 @@ static void Help(void)
 	fprintf(stderr, "--bps      <bits output rate>    : output generation rate (e.g. 1e9 = 1Gbps)\n");
 	fprintf(stderr, "--imix                           : user standard IMIX packet size distribution\n");
 	fprintf(stderr, "--histogram <filename>           : histogram (binary format) file name to generate packet flow\n");
+	fprintf(stderr, "--sort                           : packet flow will be generated according to sorted FirstTS\n");
 	fprintf(stderr, "--histogram-bin2txt <filename>   : converts histogram binary file to text format\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "\n");
@@ -380,6 +382,14 @@ static int GenerateFlow(Flow_t *F, HistogramDump_t *H)
 	return 0;
 }
 
+static int cmp_long(const void* a, const void* b)
+{
+	const u64* a64 = (const u64*)a;
+	const u64* b64 = (const u64*)b;
+
+	return (a64[1] < b64[1]);
+}
+
 static int CreateHistogramFlow(const char *Histogram)
 {
 	FILE *F = fopen(Histogram, "r");
@@ -417,9 +427,33 @@ static int CreateHistogramFlow(const char *Histogram)
 	u8* OutputBuffer    = malloc(16*1024);
 	memset(OutputBuffer, 0, 16*1024);
 
-	Flow_t Flow;
-	u8 *Buffer = fb;
+	Flow_t	Flow;
+	u8		*Buffer		= fb;
+	u32		FlowCount	= 0;
 
+	while ((Buffer - fb) < st.st_size)
+	{
+		HistogramDump_t *H = (HistogramDump_t *)Buffer;
+		if (H->signature != HISTOGRAM_SIG_V1)
+		{
+			fprintf(stderr, "Histogram signature invalid!\n");
+			break;
+		}
+		FlowCount++;
+		Buffer = Buffer + sizeof(HistogramDump_t) + H->TotalPkt * sizeof(PacketInfo_t);
+	}
+
+	Buffer	= fb;
+	u64* List = (u64*)malloc(FlowCount * 2 * sizeof(u64));
+
+	for (u32 i=0 ; i<FlowCount ; i++)
+	{
+		HistogramDump_t *H	= (HistogramDump_t *)Buffer;
+		List[i*2 + 0]		= (u64)H;
+		List[i*2 + 1]		= H->FirstTS;
+		Buffer = Buffer + sizeof(HistogramDump_t) + H->TotalPkt * sizeof(PacketInfo_t);
+	}
+	Buffer	= fb;
 	if (Histogram_Stats)
 	{
 		fprintf(stdout, "-------------------- Format --------------------\n");
@@ -427,9 +461,9 @@ static int CreateHistogramFlow(const char *Histogram)
 		fprintf(stdout, "\tTSDiff PktSize | TSDiff PktSize | ... |\n");
 		fprintf(stdout, "----------------------- --- --------------------\n\n");
 
-		while ((Buffer - fb) < st.st_size)
+		for (u32 i=0 ; i<FlowCount ; i++)
 		{
-			HistogramDump_t *H = (HistogramDump_t *)Buffer;
+			HistogramDump_t *H	= (HistogramDump_t*)List[i*2 + 0];
 			if (H->signature != HISTOGRAM_SIG_V1)
 			{
 				fprintf(stderr, "Histogram signature invalid!\n");
@@ -454,8 +488,12 @@ static int CreateHistogramFlow(const char *Histogram)
 		fclose(F);
 		free(fb);
 		free(OutputBuffer);
+		free(List);
 		return 0;
 	}
+
+	if (s_IsSortedOutput)
+		qsort(List, FlowCount, 2*sizeof(u64), cmp_long);
 
 	// write output pcap header
 	PCAPHeader_t		Header;
@@ -474,15 +512,16 @@ static int CreateHistogramFlow(const char *Histogram)
 
 	u64 Count = 0, SkipCount = 0;
 
-	while ((Buffer - fb) < st.st_size)
+	for (u32 i=0 ; i<FlowCount ; i++)
 	{
-		Flow_t *F = &Flow;
-		HistogramDump_t *H = (HistogramDump_t *)Buffer;
+		HistogramDump_t *H	= (HistogramDump_t*)List[i*2 + 0];
 		if (H->signature != HISTOGRAM_SIG_V1)
 		{
 			fprintf(stderr, "Histogram signature invalid!\n");
 			break;
 		}
+
+		Flow_t *F = &Flow;
 		//fprintf(stderr, "Histogram: %u %d %d %d %llu %llu\n", H->FlowID, H->MACProto, H->IPProto, H->DSCPStr, H->FirstTS, H->TotalPkt);
 
 		memset(F, 0, sizeof(F));
@@ -542,6 +581,9 @@ static int CreateHistogramFlow(const char *Histogram)
 	fprintf(stderr, "Total packet count: %llu SkipCount: %llu\n", Count, SkipCount);
 	free(fb);
 	free(OutputBuffer);
+	free(List);
+
+	return 0;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -610,6 +652,11 @@ int main(int argc, char* argv[])
 			fprintf(stderr, "  Histogram filename: %s\n", s_Histogram);
 			i++;
 		}
+		else if (strcmp(argv[i], "--sort") == 0)
+		{
+			s_IsSortedOutput = true;
+			fprintf(stderr, "  Sorted TS output pcap\n"); 
+		}
 		else if (strcmp(argv[i], "--histogram-bin2txt") == 0)
 		{
 			s_Histogram = argv[i+1];
@@ -634,8 +681,7 @@ int main(int argc, char* argv[])
 
 	if (s_Histogram)
 	{
-		CreateHistogramFlow(s_Histogram);
-		return 0;
+		return CreateHistogramFlow(s_Histogram);
 	}
 
 	FILE* OutFile = stdout;
