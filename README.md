@@ -17,6 +17,10 @@ Options:
 --pktsize  <packet size>         : size of each packet
 --pktslice <packet slice amount> : packet slicing amount (default 0)
 --bps      <bits output rate>    : output generation rate (e.g. 1e9 = 1Gbps)
+--imix                           : user standard IMIX packet size distribution
+--histogram <filename>           : histogram (binary format) file name to generate packet flow
+--sort                           : packet flow will be generated according to sorted FirstTS
+--histogram-bin2txt <filename>   : converts histogram binary file to text format
 
 
 Generate PCAP from histogram example:
