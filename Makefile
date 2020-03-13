@@ -1,5 +1,6 @@
 OBJS =
 OBJS += main.o
+OBJS += profgen.o
 
 DEF = 
 DEF += -O2

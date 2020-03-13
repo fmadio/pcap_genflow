@@ -13,8 +13,9 @@
 
 typedef struct PacketInfo_t
 {
-	u32 	TSDiff;
-	u16 	PktSize;
+	u32 	TSDiff;						// 32bit ns time delta between packets	
+	u16 	PktSize;					// total packet size in length 
+
 } __attribute__((packed)) PacketInfo_t;
 
 typedef struct PacketInfoBulk_t
@@ -39,9 +40,10 @@ typedef struct HistogramDump_t
 	u16				MACProto;
 	u8				IPProto;
 	u8				IPDSCP;
-	u8				VLAN:3;				// bits for VLAN0, VLAN1 and VLAN2
-	u8				MPLS:3;				// bits for MPLS0, MPLS1 and MPLS2
-	u8				Flags:2;			// unused for now
+	u8				VLAN		:3;				// bits for VLAN0, VLAN1 and VLAN2
+	u8				MPLS		:3;				// bits for MPLS0, MPLS1 and MPLS2
+	u8				Flags		:2;				// unused for now
+
 	u64				FirstTS;
 	u64				TotalPkt;
 
