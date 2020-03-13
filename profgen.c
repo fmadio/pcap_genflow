@@ -199,7 +199,7 @@ static int PacketUpdate(FlowRecord_t *F, u32 Length)
 
 //-------------------------------------------------------------------------------------------------
 
-int Profile_Generate(const char *Histogram, u32 Amplify)
+int Profile_Generate(const char *Histogram, u32 Amplify, u64 TargetGB)
 {
 	// allocate flow list
 	s_FlowListCnt 	= 0;
@@ -306,217 +306,100 @@ int Profile_Generate(const char *Histogram, u32 Amplify)
 		return 0;
 	}
 
-	// outpput one flow block
-	u64 PktCnt = 0;
-	while (true)
+	double	NSPerBit	= 1e9 / 100e9;
+	u64 TotalGB = 0;
+	u64 WorldTS	= 0;
+	do
 	{
-		u64 BestTS				= -1; 
-		FlowRecord_t* BestFlow = NULL;
+		// outpput one flow block
+		u64 PktCnt = 0;
+		u64 TSLast = 0;	
+		u64 BestTS	= -1; 
+		while (true)
+		{
+			BestTS				= -1; 
+			FlowRecord_t* BestFlow = NULL;
+			for (int i=0; i < s_FlowListCnt; i++)
+			{
+				FlowRecord_t* F = &s_FlowList[i];
+
+				// no packets left 
+				if (F->PktPos >= F->PktCnt) continue;
+
+				u64 TS = F->TSOffset + F->PktDTS[F->PktPos];
+				if (TS < BestTS)
+				{
+					BestTS 		= TS;
+					BestFlow 	= F;
+				}
+			}
+
+			if (BestFlow == NULL)
+			{
+				printf("all flows done\n");
+				break;
+			}
+
+			// length for this instance
+			u32 PktLength = BestFlow->PktLen[BestFlow->PktPos];
+			assert(PktLength < 9*1024);
+
+			// path any length fields
+			PacketUpdate(BestFlow, PktLength);
+
+			// time on the wire
+			u64 WireTS = PktLength * NSPerBit;
+
+			// add the raw wire delay 
+			WorldTS += WireTS; 
+		
+			// TS last	
+			u64 TS 	= BestFlow->TSOffset + BestFlow->PktDTS[BestFlow->PktPos];
+			s64 dTS = (TS - TSLast) - WireTS;
+			if (dTS < 0) dTS = 0;
+
+			TSLast 	= TS;
+
+			// add the flows time delta 
+			WorldTS	+= dTS;
+
+			// pcap header
+			PCAPPacket_t Pkt;
+			Pkt.Sec 			= WorldTS / 1e9; 
+			Pkt.NSec 			= WorldTS - (u64)Pkt.Sec * 1000000000ULL; 
+
+			Pkt.LengthWire		= PktLength;
+			Pkt.LengthCapture	= PktLength;
+			fwrite(&Pkt, 1, sizeof(Pkt), stdout);
+
+			// output packet
+			fwrite(BestFlow->Packet, 1, PktLength, stdout);
+
+			// Update flows latest TS
+			BestFlow->TSOffset += BestFlow->PktDTS[BestFlow->PktPos];
+
+
+
+			// next pkt in flow
+			BestFlow->PktPos++;
+
+			// update count
+			PktCnt++;
+			TotalGB += sizeof(PCAPPacket_t) + PktLength;
+			if ((PktCnt % 100000) == 0)
+			{
+				fprintf(stderr, "[%s] %8i Pkts %.3f GB\n", FormatTS(WorldTS), PktCnt, TotalGB / 1e9);
+			}
+		}
+		fprintf(stderr, "Looping\n");
+
+		// reset all flows
 		for (int i=0; i < s_FlowListCnt; i++)
 		{
 			FlowRecord_t* F = &s_FlowList[i];
-
-			// no packets left 
-			if (F->PktPos >= F->PktCnt) continue;
-
-			u64 TS = F->TSOffset + F->PktDTS[F->PktPos];
-			if (TS < BestTS)
-			{
-				BestTS 		= TS;
-				BestFlow 	= F;
-			}
+			F->PktPos 		= 0;
+			F->TSOffset 	= 0;
 		}
 
-		if (BestFlow == NULL)
-		{
-			printf("all flows done\n");
-			break;
-		}
-
-		// length for this instance
-		u32 PktLength = BestFlow->PktLen[BestFlow->PktPos];
-		assert(PktLength < 9*1024);
-
-		// path any length fields
-		PacketUpdate(BestFlow, PktLength);
-
-		// pcap header
-		PCAPPacket_t Pkt;
-		Pkt.Sec 			= BestTS / 1e9; 
-		Pkt.NSec 			= BestTS - (u64)Pkt.Sec * 1000000000ULL; 
-
-		Pkt.LengthWire		= PktLength;
-		Pkt.LengthCapture	= PktLength;
-		fwrite(&Pkt, 1, sizeof(Pkt), stdout);
-
-		// output packet
-
-		fwrite(BestFlow->Packet, 1, PktLength, stdout);
-
-		// update flow offset
-		BestFlow->TSOffset += BestFlow->PktDTS[BestFlow->PktPos];
-
-		// next pkt in flow
-		BestFlow->PktPos++;
-
-		PktCnt++;
-	}
-
-
-/*
-	struct stat st;
-	memset(&st, 0, sizeof(st));
-	if (stat(Histogram, &st) != 0)
-	{
-		fprintf(stderr, "stat %s failed\n", Histogram);
-		fclose(F);
-		return -1;
-	}
-	fprintf(stderr, "Histogram file size: %lu Bytes\n", st.st_size);
-
-	u8 *fb = malloc(st.st_size +  1);
-	if (fb == NULL)
-	{
-		fprintf(stderr, "failed to malloc file size memory\n");
-		fclose(F);
-		return -1;
-	}
-	int ret = fread(fb, st.st_size, 1, F);
-	if (ret != 1)
-	{
-		fprintf(stderr, "fread failed!\n");
-		fclose(F);
-		return -1;
-	}
-
-	u8* OutputBuffer    = malloc(16*1024);
-	memset(OutputBuffer, 0, 16*1024);
-
-	Flow_t Flow;
-	u8 *Buffer = fb;
-
-	if (Histogram_Stats)
-	{
-		fprintf(stdout, "-------------------- Format --------------------\n");
-		fprintf(stdout, "Flow <N> | ETHProto | IPProto | IPDSCP | VLAN bits | MPLS bits | First TS | Total Packets\n");
-		fprintf(stdout, "\tTSDiff PktSize | TSDiff PktSize | ... |\n");
-		fprintf(stdout, "----------------------- --- --------------------\n\n");
-
-		while ((Buffer - fb) < st.st_size)
-		{
-			HistogramDump_t *H = (HistogramDump_t *)Buffer;
-			if (H->signature != HISTOGRAM_SIG_V1)
-			{
-				fprintf(stderr, "Histogram signature invalid!\n");
-				break;
-			}
-			fprintf(stdout, "Flow %u | %s | %s | %s | %d,%d,%d | %d,%d,%d | %llu | %llu",
-					H->FlowID, MACProto2Str(H->MACProto), IPProto2Str(H->IPProto), IPDSCP2Str(H->IPDSCP),
-					GET_VLAN_BIT(H, 0), GET_VLAN_BIT(H, 1), GET_VLAN_BIT(H, 2),
-					GET_MPLS_BIT(H, 0), GET_MPLS_BIT(H, 1), GET_MPLS_BIT(H, 2),
-					H->FirstTS, H->TotalPkt);
-
-			PacketInfo_t *P = (PacketInfo_t *)(H+1);
-			for (u32 i = 0; i < H->TotalPkt ; i++)
-			{
-				if (i%10 == 0) fprintf(stdout, "\n\t");
-				fprintf(stdout, "%u %d | ", P->TSDiff, P->PktSize);
-				P = P+1;
-			}
-			fprintf(stdout, "\n");
-			Buffer = Buffer + sizeof(HistogramDump_t) + H->TotalPkt * sizeof(PacketInfo_t);
-		}
-		fclose(F);
-		free(fb);
-		free(OutputBuffer);
-		return 0;
-	}
-
-	// write output pcap header
-	PCAPHeader_t		Header;
-	Header.Magic		= PCAPHEADER_MAGIC_NANO;
-	Header.Major		= PCAPHEADER_MAJOR;
-	Header.Minor		= PCAPHEADER_MINOR;
-	Header.TimeZone		= 0;
-	Header.SigFlag		= 0;
-	Header.SnapLen		= 65535;
-	Header.Link			= PCAPHEADER_LINK_ETHERNET;
-	if (fwrite(&Header, sizeof(Header), 1, stdout) != 1)
-	{
-		fprintf(stderr, "Failed to write header to output\n");
-		return 0;
-	}
-
-	u64 Count = 0, SkipCount = 0;
-
-	while ((Buffer - fb) < st.st_size)
-	{
-		Flow_t *F = &Flow;
-		HistogramDump_t *H = (HistogramDump_t *)Buffer;
-		if (H->signature != HISTOGRAM_SIG_V1)
-		{
-			fprintf(stderr, "Histogram signature invalid!\n");
-			break;
-		}
-		//fprintf(stderr, "Histogram: %u %d %d %d %llu %llu\n", H->FlowID, H->MACProto, H->IPProto, H->DSCPStr, H->FirstTS, H->TotalPkt);
-
-		memset(F, 0, sizeof(F));
-		int GenFlowRet = GenerateFlow(F, H);
-
-		u64 TS			= H->FirstTS;
-		PacketInfo_t *P = (PacketInfo_t *)(H+1);
-
-		for (u32 i = 0; i < H->TotalPkt ; i++)
-		{
-			// If the protocol is not supported then just skip the packet generation for this flow
-			if (GenFlowRet != 0)
-			{
-				P = P+1;
-				SkipCount++;
-				continue;
-			}
-			//F->IPv4->Len		= swap16(P->PktSize - sizeof(fEther_t) - sizeof(IP4Header_t));
-			F->IPv4->Len		= swap16(P->PktSize - sizeof(fEther_t));
-			F->IPv4->CSum		= 0;
-			F->IPv4->CSum		= IP4Checksum( (u16*)F->IPv4, sizeof(IP4Header_t));
-
-			if (H->IPProto == IPv4_PROTO_UDP)
-			{
-				F->UDP->Length	= swap16(P->PktSize - F->PayloadLength - sizeof(UDPHeader_t));
-			}
-			//fprintf(stderr, "P->PktSize: %u F->PayloadLength: %d UDPHeader_t: %d UDP len: %X\n", P->PktSize, F->PayloadLength, sizeof(UDPHeader_t), F->UDP->Length);
-
-			// PCAP prepare logic
-			PCAPPacket_t Pkt;
-			TS					= TS + P->TSDiff;
-			Pkt.Sec				= TS / 1e9;
-			Pkt.NSec			= (u64)Pkt.Sec * 1000000000ULL;
-
-			Pkt.LengthWire		= P->PktSize;
-			//Pkt.LengthCapture	= P->PktSize;
-			Pkt.LengthCapture	= (P->PktSize < s_TargetPktSlice) ? P->PktSize : s_TargetPktSlice;
-
-			int wlen;
-			// write header
-			wlen = fwrite(&Pkt, sizeof(Pkt), 1, stdout);
-			if (wlen != 1) break;
-			wlen = fwrite(F->Payload, F->PayloadLength, 1, stdout);
-			if (wlen != 1) break;
-
-			// write padding
-			wlen = fwrite(OutputBuffer, Pkt.LengthCapture - F->PayloadLength, 1, stdout);
-			if (wlen != 1) break;
-
-			Count++;
-			P = P+1;
-		}
-		//Buffer = (u8 *)P;
-		Buffer = Buffer + sizeof(HistogramDump_t) + H->TotalPkt * sizeof(PacketInfo_t);
-	}
-	fclose(F);
-	fprintf(stderr, "Total packet count: %llu SkipCount: %llu\n", Count, SkipCount);
-	free(fb);
-	free(OutputBuffer);
-*/
+	} while(TotalGB < TargetGB);
 }
-

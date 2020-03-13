@@ -69,10 +69,12 @@ static u64 s_TargetBps				= 100e9;		// output data rate
 static bool s_IsIMIX				= false;		// generate packets based on imix distribution
 static bool Histogram_Stats			= false;		// generate histogram text format stats only
 static char *s_Histogram			= NULL;			// Historam file
+static u32 s_ProfileAmplify			= 1;			// how much to amplify the profile data
+static u64 s_TargetByte				= 0;			// target total byte count
 
 //-------------------------------------------------------------------------------------------------
 
-int Profile_Generate(const char *Histogram, u32 Amplify);
+int Profile_Generate(const char *Histogram, u32 Amplify, u64 TargetTotalBytes);
 
 //-------------------------------------------------------------------------------------------------
 
@@ -563,15 +565,20 @@ int main(int argc, char* argv[])
 		}
 		else if (strcmp(argv[i], "--profile") == 0)
 		{
-			s_Histogram = argv[i+1];
+			s_Histogram 	= argv[i+1];
 			fprintf(stderr, "  Histogram filename: %s\n", s_Histogram);
 			i++;
 		}
-		else if (strcmp(argv[i], "--histogram-bin2txt") == 0)
+		else if (strcmp(argv[i], "--amplify") == 0)
 		{
-			s_Histogram = argv[i+1];
-			Histogram_Stats = true;
-			fprintf(stderr, "  Histogram filename: %s Histogram_Stats: True\n", s_Histogram);
+			s_ProfileAmplify = atoi(argv[i+1]);
+			fprintf(stderr, "  Amplify Profile: %i\n", s_ProfileAmplify);
+			i++;
+		}
+		else if (strcmp(argv[i], "--byte") == 0)
+		{
+			s_TargetByte 	= (u64) atof(argv[i+1]);
+			fprintf(stderr, "  Target: %.3f GB\n", s_TargetByte/1e9);
 			i++;
 		}
 		else
@@ -591,7 +598,7 @@ int main(int argc, char* argv[])
 
 	if (s_Histogram)
 	{
-		Profile_Generate(s_Histogram, 2);
+		Profile_Generate(s_Histogram, s_ProfileAmplify, s_TargetByte);
 		return 0;
 	}
 
