@@ -67,14 +67,16 @@ static u64 s_TargetPktSize			= 512;			// packet size to generate
 static u64 s_TargetPktSlice			= 9200;			// how much to slice each packet 
 static u64 s_TargetBps				= 100e9;		// output data rate
 static bool s_IsIMIX				= false;		// generate packets based on imix distribution
-static bool Histogram_Stats			= false;		// generate histogram text format stats only
-static char *s_Histogram			= NULL;			// Historam file
+
+static u8* s_ProfileName			= NULL;			// traffic profile name/location
+static bool	s_ProfileDump			= false;		// dump the profiles data
+
 static u32 s_ProfileAmplify			= 1;			// how much to amplify the profile data
 static u64 s_TargetByte				= 0;			// target total byte count
 
 //-------------------------------------------------------------------------------------------------
 
-int Profile_Generate(const char *Histogram, u32 Amplify, u64 TargetTotalBytes);
+int Profile_Generate(u8* Profile, u32 Amplify, u64 TargetTotalBytes, bool IsDump);
 
 //-------------------------------------------------------------------------------------------------
 
@@ -91,8 +93,8 @@ static void Help(void)
 	fprintf(stderr, "--pktslice <packet slice amount> : packet slicing amount (default 0)\n");
 	fprintf(stderr, "--bps      <bits output rate>    : output generation rate (e.g. 1e9 = 1Gbps)\n");
 	fprintf(stderr, "--imix                           : user standard IMIX packet size distribution\n");
-	fprintf(stderr, "--histogram <filename>           : histogram (binary format) file name to generate packet flow\n");
-	fprintf(stderr, "--histogram-bin2txt <filename>   : converts histogram binary file to text format\n");
+	fprintf(stderr, "--profile      <filename>        : histogram (binary format) file name to generate packet flow\n");
+	fprintf(stderr, "--profile-dump <filename>        : converts histogram binary file to text format\n");
 	fprintf(stderr, "\n");
 	fprintf(stderr, "\n");
 }
@@ -565,10 +567,17 @@ int main(int argc, char* argv[])
 		}
 		else if (strcmp(argv[i], "--profile") == 0)
 		{
-			s_Histogram 	= argv[i+1];
-			fprintf(stderr, "  Histogram filename: %s\n", s_Histogram);
+			s_ProfileName 	= argv[i+1];
+			fprintf(stderr, "  Profile filename: %s\n", s_ProfileName);
 			i++;
 		}
+		else if (strcmp(argv[i], "--profile-dump") == 0)
+		{
+			s_ProfileDump 	= true; 
+			fprintf(stderr, "  Profile Dump\n"); 
+			i++;
+		}
+
 		else if (strcmp(argv[i], "--amplify") == 0)
 		{
 			s_ProfileAmplify = atoi(argv[i+1]);
@@ -596,9 +605,9 @@ int main(int argc, char* argv[])
 		pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &Thread0CPU);
 	}
 
-	if (s_Histogram)
+	if (s_ProfileName)
 	{
-		Profile_Generate(s_Histogram, s_ProfileAmplify, s_TargetByte);
+		Profile_Generate(s_ProfileName, s_ProfileAmplify, s_TargetByte, s_ProfileDump);
 		return 0;
 	}
 

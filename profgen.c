@@ -162,7 +162,7 @@ static int PacketGenerate(FlowRecord_t *F)
 	}
 	else
 	{
-		fprintf(stderr, "IPProto: %d not supported!\n", F->IPProto);
+		//fprintf(stderr, "IPProto: %d not supported!\n", F->IPProto);
 		return -1;
 	}
 }
@@ -199,7 +199,7 @@ static int PacketUpdate(FlowRecord_t *F, u32 Length)
 
 //-------------------------------------------------------------------------------------------------
 
-int Profile_Generate(const char *Histogram, u32 Amplify, u64 TargetGB)
+int Profile_Generate(const char *Histogram, u32 Amplify, u64 TargetGB, bool IsDump)
 {
 	// allocate flow list
 	s_FlowListCnt 	= 0;
@@ -254,7 +254,7 @@ int Profile_Generate(const char *Histogram, u32 Amplify, u64 TargetGB)
 				F->MPLS			= Flow.MPLS;
 
 				// generate the packet
-				PacketGenerate(F);
+				if (!IsDump) PacketGenerate(F);
 
 				F->PktPos		= 0; 
 				F->PktCnt		= Flow.TotalPkt;
@@ -277,7 +277,21 @@ int Profile_Generate(const char *Histogram, u32 Amplify, u64 TargetGB)
 				TotalPkt += Flow.TotalPkt;
 
 				float Bps = (Byte * 8.0) / (Duration / 1e9);
-				fprintf(stderr, "Flow: %8i : PktCnt: %8i Duration:%16.6f sec %10.3f KB Bps:%12.3f Mbps\n", Flow.FlowID, Flow.TotalPkt, Duration/1e9, Byte / 1024.0, Bps/1e6); 
+				if (IsDump)
+				{
+					fprintf(stdout, "Flow: %8i : MACProto:%04x IPProto:%02x VLAN:%i MPLS:%i PktCnt: %8i Duration:%16.6f sec %10.3f KB Bps:%12.3f Mbps\n", 
+							Flow.FlowID, 
+
+							Flow.MACProto, 
+							Flow.IPProto, 
+							Flow.VLAN, 
+							Flow.MPLS, 
+
+							Flow.TotalPkt, 
+							Duration/1e9, 
+							Byte / 1024.0, 
+							Bps/1e6); 
+				}
 			}
 		}
 		break;
@@ -290,6 +304,7 @@ int Profile_Generate(const char *Histogram, u32 Amplify, u64 TargetGB)
 		if (IsExit) break;
 	}
 	fprintf(stderr, "Total Memory Usage: %.3f MB\n", s_MemoryByte / 1e9);
+	if (IsDump) return 0;
 
 	// write output pcap header
 	PCAPHeader_t		Header;
