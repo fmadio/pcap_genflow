@@ -681,7 +681,7 @@ int main(int argc, char* argv[])
 		IPv4->Frag 		= (2<<5);
 		IPv4->TTL 		= 64;
 		IPv4->Proto 	= F->IPProto;
-/*
+
 		IPv4->Src.IP[0] = randu(0, 0x100);
 		IPv4->Src.IP[1] = randu(0, 0x100);
 		IPv4->Src.IP[2] = randu(0, 0x100);
@@ -691,8 +691,7 @@ int main(int argc, char* argv[])
 		IPv4->Dst.IP[1] = randu(0, 0x100);
 		IPv4->Dst.IP[2] = randu(0, 0x100);
 		IPv4->Dst.IP[3] = randu(0, 0x100);
-*/
-
+/*
 		IPv4->Src.IP[0] = (i >> 24) & 0xFF; 
 		IPv4->Src.IP[1] = (i >> 16) & 0xFF; 
 		IPv4->Src.IP[2] = (i >>  8) & 0xFF; 
@@ -702,7 +701,7 @@ int main(int argc, char* argv[])
 		IPv4->Dst.IP[1] = (i >> 16) & 0xFF; 
 		IPv4->Dst.IP[2] = (i >>  8) & 0xFF; 
 		IPv4->Dst.IP[3] = 240; 
-
+*/
 		IPv4->CSum 		= 0; 
 		IPv4->CSum 		= IP4Checksum( (u16*)IPv4, sizeof(IP4Header_t) );
 
