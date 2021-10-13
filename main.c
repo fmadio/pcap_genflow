@@ -74,6 +74,80 @@ static bool	s_ProfileDump			= false;		// dump the profiles data
 static u32 s_ProfileAmplify			= 1;			// how much to amplify the profile data
 static u64 s_TargetByte				= 0;			// target total byte count
 
+static float s_NetworkProfileSMALL[] =				// reference small packet network profile
+{
+0.000,
+0.407, //   64 :  :  136801620 (0.407) : 0.000 : *****************
+0.667, //   96 :  :   87285646 (0.260) : 0.000 : *******************
+0.807, //  128 :  :   47138889 (0.140) : 0.000 : ***************************
+0.859, //  160 :  :   17540180 (0.052) : 0.000 : **********
+0.886, //  192 :  :    9014810 (0.027) : 0.000 : *****
+0.901, //  224 :  :    5209013 (0.015) : 0.000 : ***
+0.911, //  256 :  :    3119002 (0.009) : 0.000 : *
+0.917, //  288 :  :    2065712 (0.006) : 0.000 : *
+0.921, //  320 :  :    1617887 (0.005) : 0.000 :
+0.926, //  352 :  :    1608867 (0.005) : 0.000 :
+0.929, //  384 :  :    1043692 (0.003) : 0.000 :
+0.931, //  416 :  :     704099 (0.002) : 0.000 :
+0.934, //  448 :  :     803101 (0.002) : 0.000 :
+0.936, //  480 :  :     643264 (0.002) : 0.000 :
+0.938, //  512 :  :     585426 (0.002) : 0.000 :
+0.939, //  544 :  :     487345 (0.001) : 0.000 :
+0.940, //  576 :  :     490013 (0.001) : 0.000 :
+0.941, //  608 :  :     360417 (0.001) : 0.000 :
+0.943, //  640 :  :     451136 (0.001) : 0.000 :
+0.944, //  672 :  :     342132 (0.001) : 0.000 :
+0.945, //  704 :  :     307101 (0.001) : 0.000 :
+0.946, //  736 :  :     284517 (0.001) : 0.000 :
+0.946, //  768 :  :     289194 (0.001) : 0.000 :
+0.947, //  800 :  :     280185 (0.001) : 0.000 :
+0.948, //  832 :  :     257274 (0.001) : 0.000 :
+0.949, //  864 :  :     246384 (0.001) : 0.000 :
+0.949, //  896 :  :     231408 (0.001) : 0.000 :
+0.950, //  928 :  :     257098 (0.001) : 0.000 :
+0.951, //  960 :  :     239739 (0.001) : 0.000 :
+0.952, //  992 :  :     276172 (0.001) : 0.000 :
+0.952, // 1024 :  :     236659 (0.001) : 0.000 :
+0.953, // 1056 :  :     309210 (0.001) : 0.000 :
+0.954, // 1088 :  :     334434 (0.001) : 0.000 :
+0.955, // 1120 :  :     235019 (0.001) : 0.000 :
+0.956, // 1152 :  :     238312 (0.001) : 0.000 :
+0.957, // 1184 :  :     452590 (0.001) : 0.000 :
+0.958, // 1216 :  :     363328 (0.001) : 0.000 :
+0.960, // 1248 :  :     566654 (0.002) : 0.000 :
+0.964, // 1280 :  :    1395421 (0.004) : 0.000 :
+0.964, // 1312 :  :     128878 (0.000) : 0.000 :
+0.966, // 1344 :  :     478823 (0.001) : 0.000 :
+0.973, // 1376 :  :    2377449 (0.007) : 0.000 : *
+0.976, // 1408 :  :     953664 (0.003) : 0.000 :
+0.977, // 1440 :  :     336063 (0.001) : 0.000 :
+0.978, // 1472 :  :     565047 (0.002) : 0.000 :
+1.000, // 1504 :  :    7234473 (0.022) : 0.000 : ****
+1.000, // 1536
+1.000, // 1568
+1.000, // 1600
+1.000, // 1632
+1.000, // 1664
+1.000, // 1696
+1.000, // 1728
+1.000, // 1760
+1.000, // 1792
+1.000, // 1824
+1.000, // 1856
+1.000, // 1888
+1.000, // 1920
+1.000, // 1952
+1.000, // 1984
+1.000, // 2016
+1.000, // 2048
+};
+static u32 s_NetworkProfileSMALLCnt = sizeof(s_NetworkProfileSMALL) / sizeof(float);
+
+
+static bool 	s_IsPROFILE			= false;		// generate packets based on network profile 
+static float* 	s_NetworkProfile    = NULL;
+static u32    	s_NetworkProfileCnt = 0;
+
 //-------------------------------------------------------------------------------------------------
 
 int Profile_Generate(u8* Profile, u32 Amplify, u64 TargetTotalBytes, bool IsDump);
@@ -93,6 +167,7 @@ static void Help(void)
 	fprintf(stderr, "--pktslice <packet slice amount> : packet slicing amount (default 0)\n");
 	fprintf(stderr, "--bps      <bits output rate>    : output generation rate (e.g. 1e9 = 1Gbps)\n");
 	fprintf(stderr, "--imix                           : user standard IMIX packet size distribution\n");
+	fprintf(stderr, "--small                          : use small packet network profile\n");
 	fprintf(stderr, "--profile      <filename>        : histogram (binary format) file name to generate packet flow\n");
 	fprintf(stderr, "--profile-dump <filename>        : converts histogram binary file to text format\n");
 	fprintf(stderr, "\n");
@@ -565,6 +640,15 @@ int main(int argc, char* argv[])
 			s_IsIMIX = true;
 			fprintf(stderr, "  IMIX Packet Distributioni\n"); 
 		}
+		else if (strcmp(argv[i], "--small") == 0)
+		{
+			s_IsPROFILE 		= true;
+
+			s_NetworkProfile 	= s_NetworkProfileSMALL;
+			s_NetworkProfileCnt = s_NetworkProfileSMALLCnt;
+
+			fprintf(stderr, "  Small packet size distribution\n"); 
+		}
 		else if (strcmp(argv[i], "--profile") == 0)
 		{
 			s_ProfileName 	= argv[i+1];
@@ -760,6 +844,25 @@ int main(int argc, char* argv[])
 				assert(false);
 			}
 			IMIXCnt = (IMIXCnt + 1) % 12;
+		}
+
+
+		// SMALL packet size distribution 
+		if (s_IsPROFILE)
+		{
+			// uniformly distributed number
+			float r = (float)rand() / (float)RAND_MAX;
+
+			// pick a packet size based on CDF mapping @ 32B intervals 
+			Length = 9200;
+			for (int j=0; j < s_NetworkProfileCnt-1; j++)
+			{
+				if ((r >= s_NetworkProfile[j+0]) && (r < s_NetworkProfile[j+1]))
+				{
+					Length = 64 + j *32;
+					break;
+				}
+			}		
 		}
 
 		// TSOffset is sub-nano, need to seperate into a base + offset
